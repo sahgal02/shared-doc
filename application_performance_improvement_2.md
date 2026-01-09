@@ -105,11 +105,9 @@ ChannelLogoMap.fetchLogoFromDb(liveEpgManager.get())
 
 // AFTER (Current Implementation):
 // Defer channel logo load slightly after startup to reduce IO contention
-coroutineScope.launch(Dispatchers.Main) {
+coroutineScope.launch(Dispatchers.IO) {
     delay(100) // Defer slightly after startup
-    withContext(Dispatchers.IO) {
-        ChannelLogoMap.fetchLogoFromDb(liveEpgManager.get())
-    }
+    ChannelLogoMap.fetchLogoFromDb(liveEpgManager.get())
 }
 ```
 
@@ -150,7 +148,7 @@ coroutineScope.launch(Dispatchers.IO) {
 
 #### Issue 3: Player Initialization ⚠️ **BLOCKED BY DEPENDENCY**
 
-**Location:** Line 643 (via `ensurePlayerInitialized()`)  
+**Location:** Line 641  
 **Problem:**
 - Player initialization happens synchronously even if not immediately needed
 - Involves setting up analytics, config builders, and SDK initialization
@@ -159,28 +157,10 @@ coroutineScope.launch(Dispatchers.IO) {
 **Current Status:**
 - **Cannot be deferred**: `FlavoredTVApplication.onCreate()` (lifecycle observer) accesses `OneTvPlayer.initConfig.youBoraCmsConfig` immediately when observer is added
 - Player must be initialized before lifecycle observer is registered
-- Made idempotent with `ensurePlayerInitialized()` to prevent double initialization
+- No optimization possible - must remain synchronous due to architectural dependency
 
-**Solution:**
-```kotlin
-// BEFORE (Line 621):
-initPlayer()
-
-// AFTER (Current Implementation):
-// Initialize player synchronously before adding lifecycle observer
-// FlavoredTVApplication.onCreate() accesses OneTvPlayer.initConfig immediately
-ensurePlayerInitialized()
-
-private val playerInitialized = AtomicBoolean(false)
-
-fun ensurePlayerInitialized() {
-    if (!playerInitialized.getAndSet(true)) {
-        initPlayer()
-    }
-}
-```
-
-**Impact:** Made idempotent to prevent double initialization. **Cannot be deferred** - `FlavoredTVApplication.onCreate()` requires `OneTvPlayer.initConfig` immediately when lifecycle observer is added (line 645). Optimization blocked by architectural dependency.
+**Recommendation:**
+**Not applicable** - Required synchronously due to `FlavoredTVApplication` dependency. Optimization blocked by architectural dependency. No code changes made as there's no benefit to wrapping in a lazy initialization pattern when it must be called synchronously anyway.
 
 ---
 
